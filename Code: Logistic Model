@@ -1,0 +1,98 @@
+---
+title: "Predicting Default Probability on Credit Card Payments"
+author: "Pamela De Vera"
+date: "12/20/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, message=FALSE, echo=FALSE}
+
+# Please set working directory to Source file location and keep r-code file and csv in the same folder.
+
+# Download the following packages if not already installed by removing its corresponding comments
+
+# install.packages("tidyverse")
+# install.packages("lme4")
+
+# Libraries used in this analysis
+library(tidyverse)
+library(lme4)
+
+################################################################################
+
+# Data Cleaning
+
+# Load csv file
+defaultdata <- readr::read_csv("UCI_Credit_Card.csv")
+
+# Select predictor variables
+defaultdata <- defaultdata %>%
+  dplyr::select(SEX, EDUCATION, AGE, default.payment.next.month, PAY_0, BILL_AMT1 )
+
+# Fix assigned sex values to 0 and 1 (1 = male)
+defaultdata <- defaultdata %>%
+  mutate(SEX = 
+           ifelse(SEX == 1, 0, 1))
+
+# Filter out education level listed as other
+defaultdata <- defaultdata %>%
+  filter(EDUCATION == 1 | EDUCATION == 2 | EDUCATION == 3) 
+
+# Merge all values representing a payment made on time
+defaultdata <- defaultdata %>%
+  mutate(PAY_0 =
+           ifelse(PAY_0==-2|PAY_0==-1, 0, PAY_0))
+
+defaultT <- defaultdata %>%
+  filter(default.payment.next.month == 1)
+
+defaultF <- defaultdata %>%
+  filter(default.payment.next.month == 0)
+
+# Baseline characteristics for total, default, and not default
+## Total
+agesum <- summary(defaultdata$AGE)
+sexsum <- summary(defaultdata$SEX)
+edusum <- summary(defaultdata$EDUCATION)
+paysum <- summary(defaultdata$PAY_0)
+billsum <- summary(defaultdata$BILL_AMT1)
+
+## Defaulted payments
+ageTsum <- summary(defaultT$AGE)
+sexTsum <- summary(defaultT$SEX)
+eduTsum <- summary(defaultT$EDUCATION)
+payTsum <- summary(defaultT$PAY_0)
+billTsum <- summary(defaultT$BILL_AMT1)
+
+## Have not defaulted payments
+ageFsum <- summary(defaultF$AGE)
+sexFsum <- summary(defaultF$SEX)
+eduFsum <- summary(defaultF$EDUCATION)
+payFsum <- summary(defaultF$PAY_0)
+billFsum <- summary(defaultF$BILL_AMT1)
+
+
+################################################################################
+
+# Logistic Model
+
+# Change education values to corresponding levels of education
+defaultdata <- defaultdata %>%
+  mutate(EDUCATION =
+           ifelse(EDUCATION == 1, "Grad School", 
+                  ifelse(EDUCATION == 2, "University","High School")))
+
+# Model
+defaultmodel <- glm(default.payment.next.month ~ AGE + SEX + as.factor(EDUCATION) + PAY_0 + BILL_AMT1, family = binomial, data = defaultdata)
+
+# Model summary
+model_est <- coef(summary(defaultmodel))[,1]
+model_se <- coef(summary(defaultmodel))[,2]
+model_zval <- coef(summary(defaultmodel))[,3]
+model_pval <- coef(summary(defaultmodel))[,4]
+
+################################################################################
+
+# Goodness-of-fit
+
+pchisq(defaultmodel$deviance, defaultmodel$df.residual)
