@@ -13,10 +13,12 @@ output: pdf_document
 
 # install.packages("tidyverse")
 # install.packages("lme4")
+# install.packages("gridExtra")
 
 # Libraries used in this analysis
 library(tidyverse)
 library(lme4)
+library(gridExtra)
 
 ################################################################################
 
@@ -32,7 +34,7 @@ defaultdata <- defaultdata %>%
 # Fix assigned sex values to 0 and 1 (1 = male)
 defaultdata <- defaultdata %>%
   mutate(SEX = 
-           ifelse(SEX == 1, 0, 1))
+           ifelse(SEX == 1, 1, 0))
 
 # Filter out education level listed as other
 defaultdata <- defaultdata %>%
@@ -74,16 +76,42 @@ billFsum <- summary(defaultF$BILL_AMT1)
 
 ################################################################################
 
-# Logistic Model
+# Graphs
 
-# Change education values to corresponding levels of education
+# Change education and sex to categorical variables for graphs
 defaultdata <- defaultdata %>%
   mutate(EDUCATION =
            ifelse(EDUCATION == 1, "Grad School", 
                   ifelse(EDUCATION == 2, "University","High School")))
 
+defaultdata <- defaultdata %>%
+  mutate(SEX = 
+           ifelse(SEX == 0, "Female", "Male"))
+
+# Histograms/Bar graphs for variables
+agep <- ggplot(data=defaultdata, aes(x=AGE, fill=as.factor(default.payment.next.month))) 
+  + geom_histogram() +theme(legend.position = "none") + labs(x="Age (years)", y="Count")
+sexp <- ggplot(data=defaultdata, aes(x=SEX, fill=as.factor(default.payment.next.month))) 
+  + geom_bar() +theme(legend.title = element_blank())+labs(x="Sex", y="Count")
+edup <- ggplot(data=defaultdata, aes(x=EDUCATION, fill=as.factor(default.payment.next.month))) 
+  + geom_bar() +theme(legend.position = "none")+labs(x="Education Level", y="Count")
+payp <- ggplot(data=defaultdata, aes(x=PAY_0, fill=as.factor(default.payment.next.month))) 
+  + geom_bar() +theme(legend.position = "none")+labs(x="Months Past Due on Payment", y="Count")
+billp <- ggplot(data=defaultdata, aes(x=BILL_AMT1, fill=as.factor(default.payment.next.month))) 
+  + geom_histogram() +theme(legend.position = "none")+labs(x="Latest Bill Statement", y="Count")
+
+# Graph layout on pdf
+grid.arrange(agep, billp, payp, edup, sexp, nrow=3, ncol=2, 
+  top = "Distribution of Predictor Variables", bottom = "Figure 1: 0 = Not default, 1 = Default")
+
+
+################################################################################
+
+# Logistic Model
+
 # Model
-defaultmodel <- glm(default.payment.next.month ~ AGE + SEX + as.factor(EDUCATION) + PAY_0 + BILL_AMT1, family = binomial, data = defaultdata)
+defaultmodel <- glm(default.payment.next.month ~ AGE + as.factor(SEX) + as.factor(EDUCATION) 
+  + PAY_0 + BILL_AMT1, family = binomial, data = defaultdata)
 
 # Model summary
 model_est <- coef(summary(defaultmodel))[,1]
