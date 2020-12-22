@@ -2,7 +2,7 @@
 Using a logistic regression model to predict the chance of defaulting on a loan based on age, sex, education, remaining balances and the months past due after the last payment period.
 
 ### Acknowledgments 
-The dataset used for this analysis was retrieved from the UCI Machine Learning Institute through https://www.kaggle.com/uciml/default-of-credit-card-clients-dataset.
+The dataset used for this analysis was retrieved from the UCI Machine Learning Repository through https://www.kaggle.com/uciml/default-of-credit-card-clients-dataset.
 
 Dua, D. and Graff, C. (2019). UCI Machine Learning Repository [http://archive.ics.uci.edu/ml]. Irvine, CA: University of California, School of Information and Computer Science.
 
