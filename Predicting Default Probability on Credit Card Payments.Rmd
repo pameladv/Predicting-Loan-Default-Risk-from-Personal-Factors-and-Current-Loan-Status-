@@ -1,0 +1,320 @@
+---
+title: "Predicting Default Probability on Credit Card Payments"
+author: "Pamela De Vera"
+date: "20/12/2020"
+output:
+  pdf_document: default
+abstract: Knowing a borrower\'s credit risk is important to financial institutions as it can help determine how much of a premium to charge clients. The data was retrieved from the *UCI Machine Learning Repository* to develop a logistic model predicting a credit card client\'s probability of defaulting on a payment. The model predicted this probability based on the client\'s age, sex, education, their latest bill statement, and the number of months they were past due on their latest payment. A goodness-of-fit test was then performed to see how well the model fit the data. There was no evidence to indicate that the model was a bad fit and all predictors were found to be significant. That is, age and the number of months payment was made past its due date has a positive relationship with the log probability of defaulting. Being male also increases this probability. Furthermore, the level of education and the bill statement amount has a negative relationship with the log probability. 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, include=FALSE, message=FALSE}
+# Download the following packages if not already installed by removing its corresponding comments
+
+# install.packages("tidyverse")
+# install.packages("lme4")
+# install.packages("gridExtra")
+
+# Libraries used in this analysis
+library(tidyverse)
+library(lme4)
+library(gridExtra)
+
+```
+**Keywords**: Logistic regression, goodness-of-fit, loan default, credit risk
+
+
+Code and data used in this analysis is found at: <https://github.com/pameladv/Predicting-Loan-Default-Risk-from-Personal-Factors-and-Current-Loan-Status->
+
+# I. Introduction
+
+When banks decide whether to approve a loan, they look at an individual's income, assets, and debts (Government of Canada, 2019). However, after they've approved the loan, the bank still runs the risk of an individual failing to pay their loan, or defaulting, otherwise known as credit risk (Berk et al., 2018). To accommodate for the risk of default they acquire, banks will often add premiums to loans varying on each loan's default risk (Canada Mortgage and Housing Corporation, n.d.).
+
+Logistic regression is used to predict the logistic probability of a binary response variable using one or more predictor variables, both numerical and categorical (Sheather, 2009). For this paper, I will investigate the relationship between defaulting on a loan with an individual's age, sex, education, their repayment status after the first term, and their bill statement after the first term.
+
+This paper will be using a dataset to determine a possible, valid multilevel model predicting the probability that an individual may have heart disease. In the Methodology section, I will be explaining the components of the dataset and the regression model. Next, the results of the model and diagnostics will be laid out in the Results section. Lastly, conclusions, inferences, weaknesses, and next steps will be found in the Discussion section.
+
+```{r, include=FALSE, message=FALSE}
+
+# Clean data
+defaultdata <- readr::read_csv("UCI_Credit_Card.csv")
+
+defaultdata <- defaultdata %>%
+  dplyr::select(SEX, EDUCATION, AGE, default.payment.next.month, PAY_0, BILL_AMT1 )
+
+# Fix assigned sex values to 0 and 1 (1 = male)
+defaultdata <- defaultdata %>%
+  mutate(SEX = 
+           ifelse(SEX == 1, 1, 0))
+
+# Filter out education level listed as other
+defaultdata <- defaultdata %>%
+  filter(EDUCATION == 1 | EDUCATION == 2 | EDUCATION == 3) 
+
+defaultdata <- defaultdata %>%
+  mutate(PAY_0 =
+           ifelse(PAY_0==-2|PAY_0==-1, 0, PAY_0))
+
+defaultT <- defaultdata %>%
+  filter(default.payment.next.month == 1)
+
+defaultF <- defaultdata %>%
+  filter(default.payment.next.month == 0)
+
+# Baseline characteristics for total, default, and not default
+agesum <- summary(defaultdata$AGE)
+sexsum <- summary(defaultdata$SEX)
+edusum <- summary(defaultdata$EDUCATION)
+paysum <- summary(defaultdata$PAY_0)
+billsum <- summary(defaultdata$BILL_AMT1)
+
+ageTsum <- summary(defaultT$AGE)
+sexTsum <- summary(defaultT$SEX)
+eduTsum <- summary(defaultT$EDUCATION)
+payTsum <- summary(defaultT$PAY_0)
+billTsum <- summary(defaultT$BILL_AMT1)
+
+ageFsum <- summary(defaultF$AGE)
+sexFsum <- summary(defaultF$SEX)
+eduFsum <- summary(defaultF$EDUCATION)
+payFsum <- summary(defaultF$PAY_0)
+billFsum <- summary(defaultF$BILL_AMT1)
+
+```
+
+# II. Methodology
+
+## II-i. Data
+
+The data we will use in this analysis is provided by the *UCI Machine Learning Repository* through *kaggle*. It includes the sex, age, education, and marital status of 30,000 credit card clients in Taiwan from 2005, along with the principal amount of the loan made by each client, their previous payments, bill statements, and whether they have defaulted on their next payment. Unfortunately, the method in which the data was collected is unknown, so, we are unable to determine our frame population. Our sample population is then the 29,532 credit card clients remaining after filtering of the data discussed later on in this section. Our target population is all credit cardholders in Taiwan.
+
+We will specifically be looking at a client's age, sex, education level, as well as how late their most recent payment was and their latest bill statement. We have chosen to look at their age as generally, one would expect younger people to have the most default risk from lack of assets and experience. However, it has been shown that younger people typically default on loan repayment the least of any other age group (Debbaut et al., 2013). Also, women tend to perform better in loan repayments than men (Goodman et al., 2016). We also note that for student loans in California, the students with parents of higher levels of education had a lower default risk than those with parents of lower levels of education (Fuinhas et al., 2019), justifies the need to investigate how education can predict default risk. 
+
+In the dataset, the delay in payment is listed as values from 1 to 8 for the number of months past the due date and -2 to 0 if the payment was made appropriately. We noticed in the dataset that the values -2 and 0 represent the same value in terms of months past due, the data was mutated such that only one value, 0, represents the payment made on time. For education, only four levels were listed: high school, university, graduate school, and 'other'. Since 'other' could include many different education levels like elementary school or have completed a Doctorate, we will not include any data entries with 'other' as an education level.
+
+\begin{table}[!h]
+\centering
+\begin{tabular}{|l| l| l| l|} 
+ \hline
+  \textbf{Characteristic} & \textbf{Sample (n=`r length(defaultdata$AGE)`)} & \textbf{Not Default (n=`r length(defaultF$AGE)`)} & \textbf{Default (n=`r length(defaultT$AGE)`)}\\ [0.5ex] 
+ \hline
+  \multicolumn{4}{|l|}{\textbf{Age}}\\
+  \hline
+  Mean  & `r agesum[4]` &`r ageFsum[4]` & `r ageTsum[4]`\\
+  Median & `r agesum[3]`&`r ageFsum[3]` & `r ageTsum[3]`\\
+  \hline
+  \multicolumn{4}{|l|}{\textbf{Sex}}\\
+  \hline
+  Mean  & `r sexsum[4]`&`r sexFsum[4]` & `r sexTsum[4]`\\
+  Median & `r sexsum[3]`&`r sexFsum[3]` & `r sexTsum[3]`\\
+  \hline
+  \multicolumn{4}{|l|}{\textbf{Education}}\\
+  \hline
+  Mean & `r edusum[4]`&`r eduFsum[4]` & `r eduTsum[4]`\\
+  Median & `r edusum[3]`&`r eduFsum[3]` & `r eduTsum[3]`\\
+  \hline
+  \multicolumn{4}{|l|}{\textbf{Delay on Latest Payment (months)}}\\
+  \hline
+  Mean & `r paysum[4]`&`r payFsum[4]` & `r payTsum[4]`\\
+  Median & `r paysum[3]`&`r payFsum[3]` & `r payTsum[3]`\\
+  \hline
+  \multicolumn{4}{|l|}{\textbf{Latest Bill Statement}}\\
+  \hline
+  Mean & `r billsum[4]`&`r billFsum[4]` & `r billTsum[4]`\\
+  Median & `r billsum[3]`&`r billFsum[4]` & `r billTsum[4]`\\[1ex]
+ \hline
+\end{tabular}
+\caption{Baseline Characteristics}
+\label{table:1}
+\end{table}
+
+
+Figure 1 displays the distribution of our variables between the clients who have defaulted and the clients who have not. When looking at the latest bill statement, age, and the number of months the last payment was made past the due date, we can see from their corresponding graphs that they are right-skewed. This is also evident in Table 1 because the mean for each is greater than the median. When comparing the distributions in the groups who have and have not defaulted on their next payment, we can see that the age distribution is more spread out for those who have defaulted, while there is a peak in the younger ages for those who did not default. We can also see a similar trend in the number of months payment was made past the due date. Furthermore, when looking at sex, we note that females have a higher proportion of clients who haven't defaulted on their next payment relative to males.
+```{r, message=FALSE}
+
+# Change education and sex to categorical for graphs
+defaultdata <- defaultdata %>%
+  mutate(EDUCATION =
+           ifelse(EDUCATION == 1, "Grad School", 
+                  ifelse(EDUCATION == 2, "University","High School")))
+
+defaultdata <- defaultdata %>%
+  mutate(SEX = 
+           ifelse(SEX == 0, "Female", "Male"))
+
+# Histograms/Bar graphs for variables
+agep <- ggplot(data=defaultdata,aes(x=AGE,fill=as.factor(default.payment.next.month)))+ geom_histogram() + theme(legend.position = "none") + labs(x="Age (years)", y="Count")
+sexp <- ggplot(data=defaultdata,aes(x=SEX,fill=as.factor(default.payment.next.month))) + geom_bar() + theme(legend.title = element_blank()) + labs(x="Sex", y="Count")
+edup <- ggplot(data=defaultdata, aes(x=EDUCATION, fill=as.factor(default.payment.next.month))) + geom_bar() + theme(legend.position = "none") + labs(x="Education Level", y="Count")
+payp <- ggplot(data=defaultdata, aes(x=PAY_0, fill=as.factor(default.payment.next.month))) + geom_bar() + theme(legend.position = "none")+labs(x="Months Past Due on Payment", y="Count")
+billp <- ggplot(data=defaultdata, aes(x=BILL_AMT1, fill=as.factor(default.payment.next.month))) + geom_histogram() + theme(legend.position = "none") + labs(x="Latest Bill Statement", y="Count")
+
+grid.arrange(agep, billp, payp, edup, sexp, nrow=3, ncol=2, top = "Distribution of Predictor Variables", bottom = "Figure 1: 0 = Not default, 1 = Default")
+
+
+
+```
+
+
+
+## II-ii. Model
+
+For the analysis, we will be performing a logistic regression model with the *lme4* package in R. The logistic model will give us the log probability of our binary response variable (a client defaulting on their next payment), given certain values of our predictor variables. It is expressed in the form of the equation below, where *p* is the probability of default, $\beta_0$ is the log probability of defaulting when all predictor values are 0, and each remaining $\beta_i$ is the change in log probability when $x_i$ increases by 1, holding all other $x$'s constant. We will be using this model because we will be able to use our predicted probability as a measure of default or credit risk.
+
+$$\begin{split}
+  log(\frac{p}{1-p})=\beta_0+\beta_{\text{age}}x_{\text{age}}+\beta_{\text{male}}x_{\text{male}}+\beta_{\text{highschool}}x_{\text{highschool}}\\
+  +\beta_{\text{university}}x_{\text{university}}+\beta_{\text{pmt}}x_{\text{pmt}}+\beta_{\text{bill}}x_{\text{bill}}
+\end{split}$$
+
+When determining the validity of the model, we will look at the residual deviance of the model with $29532-6-1 = 29525$ degrees of freedom to perform a goodness-of-fit test. This test will tell us if our model is appropriate for our sample. It has a null hypothesis, $H_0$, and an alternative hypothesis, $H_a$, shown below. We calculate the p-value, which is the probability that the true deviance is greater than the residual deviance of the model, taken on a chi-squared distribution of 29525 degrees of freedom, with R. If our calculated p-value is less than 0.05, then we have enough evidence to reject the null hypothesis, indicating our model may not be a good fit (Sheather, 2009).
+
+$$ H_0: \text{logistic model is appropriate}$$
+$$ H_a: \text{logistic model is not appropriate}$$
+
+# III. Results
+
+```{r, include = FALSE, message= FALSE}
+
+defaultmodel <- glm(default.payment.next.month ~ AGE + as.factor(SEX) + as.factor(EDUCATION) + PAY_0 + BILL_AMT1, family = binomial, data = defaultdata)
+
+
+model_est <- coef(summary(defaultmodel))[,1]
+model_se <- coef(summary(defaultmodel))[,2]
+model_zval <- coef(summary(defaultmodel))[,3]
+model_pval <- coef(summary(defaultmodel))[,4]
+
+```
+
+\begin{table}[!h]
+\centering
+\begin{tabular}{|l| l| l| l| l|} 
+ \hline
+ \textbf{Coefficient} & \textbf{Estimate} & \textbf{Standard Error} & \textbf{z-value} & \textbf{p-value} \\[0.5ex]
+ \hline
+ Intercept & `r model_est[1]` & `r model_se[1]` & `r model_zval[1]` & `r model_pval[1]` \\
+ \hline
+ Age & `r model_est[2]` & `r model_se[2]` & `r model_zval[2]` & `r model_pval[2]` \\
+ \hline
+ Sex & `r model_est[3]` & `r model_se[3]` & `r model_zval[3]` & `r model_pval[3]` \\
+ \hline
+ Latest Payment Delay & `r model_est[6]` & `r model_se[6]` & `r model_zval[6]` & `r model_pval[6]` \\
+ \hline
+ Latest Bill Statement & `r model_est[7]` & `r model_se[7]` & `r model_zval[7]` & `r model_pval[7]` \\
+ \hline
+\multicolumn{5}{|l|}{Education}\\
+ \hline
+ Highschool & `r model_est[4]` & `r model_se[4]` & `r model_zval[4]` & `r model_pval[4]` \\
+ \hline
+ University & `r model_est[5]` & `r model_se[5]` & `r model_zval[5]` & `r model_pval[5]` \\[1ex]
+ \hline
+\end{tabular}
+\caption{Model Summary}
+\label{table:2}
+\end{table}
+
+In Table 2, the summary values of our model is displayed. So, we can write our model equation for the log probability below.
+
+$$\begin{split} 
+log(\frac{p}{1-p})=`r model_est[1]`+`r model_est[2]`x_{\text{age}}+`r model_est[3]`x_{\text{male}}\\ +`r model_est[4]`x_{\text{Highschool}}+`r model_est[5]`x_{\text{University}}\\+`r model_est[6]`x_{\text{pmt}}+`r model_est[7]`x_{\text{bill}}
+\end{split}$$
+
+From this, we can directly calculate the probability of default based on the predictors as:
+
+$$p=\frac{exp(r)}{1+exp(r)},$$
+$$\begin{split}
+\text{where }r=`r model_est[1]`+`r model_est[2]`x_{\text{age}}+`r model_est[3]`x_{\text{male}}+`r model_est[4]`x_{\text{Highschool}}\\
++`r model_est[5]`x_{\text{University}}+`r model_est[6]`x_{\text{pmt}}+`r model_est[7]`x_{\text{bill}}
+\end{split}$$
+
+We can note that as age and the delay in payment increases, the probability of defaulting also increases from the positive estimate value. Furthermore, if the client has completed high school or university, the probability of defaulting also increases, which means that of the three education levels classified in the data, a client who has completed Graduate School will have the lowest probability of default. We can also note that the probability of defaulting increases in men. Looking upon the predictors with negative estimate values, we see that the probability of defaulting decreases as the latest bill statement decreases. 
+
+Looking at the p-values of each coefficient estimate, we discern that all estimates are significant to a significance level of $\alpha=0.05$. 
+
+For our goodness of fit test, our residual and null deviance with their corresponding degrees of freedom are shown below. Our null and alternative hypotheses remain the same as seen in Section II-ii. The p-value for this test is the probability that true deviance, $G^2$ is greater than our residual deviance, $P(G^2>27150)$, on a chi-squared distribution of 29525 degrees of freedom, $\chi^2_{29525}$. We calculate this value as 1-`r pchisq(27150,29525)`, or, approximately 1. Since our p-value is much greater than 0.05, we fail to reject the null hypothesis, indicating our model may be a good fit for our data.
+\begin{table}[!h]
+\centering
+\begin{tabular}{|l| l| l|} 
+ \hline
+  & \textbf{Deviance} & \textbf{Degrees of Freedom} \\[0.5ex]
+  \hline
+  Null & `r defaultmodel$null.deviance` & `r defaultmodel$df.null`\\
+  Residual & `r defaultmodel$deviance` & `r defaultmodel$df.residual`\\[1ex]
+ \hline
+\end{tabular}
+\caption{Null and Residual Deviance}
+\label{table:3}
+\end{table}
+
+# IV. Discussion
+
+## IV-i. Summary
+
+We performed logistic regression on the data to find a model which could predict the probability that credit card clients in Vietnam would default on the next repayment of their loan. A goodness-of-fit test was conducted to make sure the model was a good fit to the data. We found that all estimate values in the model were significant in predicting the log probability of default and that the model is an appropriate fit to the data.
+
+## IV-ii. Conclusions
+The logistic model suggests that there is a difference in default risk between age groups, sexes, and levels of education completed. That is, a young female who has completed graduate school will have a lower risk of default compared to an older man who has completed high school, assuming that they both have made their last payment within the same number of months and their bill statements are the same. The model also suggests that the later a client takes to make a payment and the lower their bill statement is, the higher their probability of default will be. 
+
+More specifically, we can say that the log probability of a client defaulting on their next payment will increase by `r model_est[2]`,  `r model_est[6]`, and decrease by `r model_est[7]` for every year older the client is, every month late the last payment was made, and every dollar increase in the last bill statement, respectively. If the client is male, their log probability will be higher by `r model_est[3]` relative to females. Moreover, if the client's highest level of education is highschool or university, their log probability will be higher by `r model_est[4]` or `r model_est[5]`, respectively, relative to a client whose highest level of education completed is graduate school.
+
+## IV-iii. Weaknesses
+Although we have seen that this model may be a good fit for the data, a possible setback was the lack of knowledge on how the data was collected. As a result of being unaware of the data collection process, we are unable to tell if there is any bias from practices such as selecting certain data points to get specific results when performing an analysis.
+
+Additionally, we notice that the estimate for the intercept value has the smallest p-value of `r model_pval[1]`. However, we are unable to make an inference on this because the intercept is the point where all predictors are equal to 0. That is, it would be the log probability of a female who has completed graduate school, has made their most recent payment on time, and has a bill statement of 0. We note that this individual must also be 0 years of age, making it not possible to be a credit card client.
+
+Furthermore, this model would not be able to predict the credit risk of potential clients as two of our predictors require that the client have already been approved for the loan. 
+
+
+## IV-iv. Next Steps
+Future steps to improve the use of this model would be to create a similar dataset, this time including income, the value of all assets, and the number of dependents a possible client has. By including this information, a model could be created with these as predictors, along with age, sex, and level of education, which could be used to predict credit risk before the loan is approved. Thus, it may help determine if the loan should be approved or not.
+
+Also, the model could be made specific to the different types of loans, such as student, mortgage, vehicle, and personal loans. The default risk of a specific client could change within each of these types of loans. One reason being the maturity period of the loan. In general, there is less risk to banks on shorter-term loans because they have a better insight of their clients' financial situations in the near rather than distant future (Corporate Finance Institute, n.d.). Thus, streamlining the model to focus on specific types of loans may help to increase the accuracy in predicting credit risk.
+ 
+
+# V. References
+
+|  Bates, D., Maechler, M., Bolker, B., & Walker, S. (2015). Fitting Linear Mixed-Effects Models Using lme4.
+|      *Journal of Statistical Software*, 67(1), 1-48. https://doi.org/10.18637/jss.v067.i01 
+
+|   Berk, J., DeMarzo, P., Stangelann, D. (2018). *Corporate Finance* (2nd Canadian ed.). 
+|       Pearson Education. 
+
+|   Canada Mortgage and Housing Corporation. (n.d.). *Mortgage Loan Insurance and Premiums*. CMHC.
+|       https://www.cmhc-schl.gc.ca/en/finance-and-investing/mortgage-loan-insurance/the-resource/
+|       mortgage-loan-insurance-and-premiums
+
+|   Corporate Finance Institute. (n.d.) *Short Term Loan*. CFI. https://
+|       corporatefinanceinstitute.com/resources/knowledge/finance/short-term-loan/
+
+|   Debbaut, P., Ghrent, A.C., Kudlyak, M., & Romero, J. (2013). *Economic Brief: How Risky Are Young 
+|       Borrowers?*. Federal Reserve Bank of Richmond. https://www.richmondfed.org/~/media/richmond
+|       fedorg/publications/research/economic_brief/2013/pdf/eb_13-12.pdf
+
+|   Dua, D. and Graff, C. (2019). *UCI Machine Learning Repository: default of credit card clients*
+|       *Data Set* [Data set]. Irvine, CA: University of California, School of Information and Computer
+|       Science. https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients 
+
+|   Fuinhas, J.A., Ferreira Motinho, V.M., Estefano, S. (2019). Delinquency and Default in USA Student
+|       Debt as a Proportional Response to Unemployment and Average Debt per Borrower. *Economies*,
+|       7(4):52. doi.org/10.3390/economies7040100
+
+|   Goodman, L., Zhu, J., Bai, B. (2016). *Women Are Better Than Men At Paying Their Mortgages*. 
+|       Urban Institute.  https://www.urban.org/research/publication/women-are-better-men-paying-their-
+|       mortgages
+
+|   Government of Canada. (2019). *Getting pre-approved and qualifying for a mortgage*. Canada.
+|       https://www.canada.ca/en/financial-consumer-agency/services/mortgages/preapproval-qualify-
+|       mortgage.html
+
+|   Sheather, S.J. (2009). *A Modern Approach to Regression with R* (pp. 125-149). Springer Science+Business
+|       Media. doi:10.1007/978-0-387-09608-7_8
+
+|  Wickham, H., et al. (2019). Welcome to the tidyverse. *Journal of Open Source Software*, 4(43), 1686.
+|      https://doi.org/10.21105/joss.01686
+
+
+|   Yeh, I. C., & Lien, C. H. (2009). The comparisons of data mining techniques for the
+|       predictive accuracy of probability of default of credit card clients. *Expert Systems with *
+|       *Applications*, 36(2), 2473-2480.
